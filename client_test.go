@@ -1,4 +1,4 @@
-package soap
+package soap_test
 
 import (
 	"io/ioutil"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/achiku/testsvr"
 	"github.com/achiku/xml"
+	. "github.com/sait/soapc"
 )
 
 type name struct {
@@ -121,7 +122,7 @@ func withSOAPHeaderResponse(logger testsvr.Logger) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/xml")
 		w.WriteHeader(http.StatusOK)
 		res, _ := xml.MarshalIndent(v, "", "  ")
-		logger.Logf("Response:\n%s", res)
+		logger.Logf("Response:\n%s", string(res))
 		w.Write(res)
 		return
 	}
@@ -141,14 +142,12 @@ func TestClientNoSOAPHeader(t *testing.T) {
 	url := ts.URL + "/noheader"
 	client := NewClient(url, isTLS, nil)
 	req := testRequest{Message: "test"}
-	resp := person{}
-	if err := client.Call(url, req, &resp, nil); err != nil {
+
+	resp, err := client.Call(url, req)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%+v", resp)
-	if resp.ID != 1 {
-		t.Errorf("want 1 got %d", resp.ID)
-	}
+	t.Logf("%+v", string(resp))
 }
 
 func TestClientWithSOAPHeader(t *testing.T) {
@@ -163,19 +162,11 @@ func TestClientWithSOAPHeader(t *testing.T) {
 	}
 	client := NewClient(url, isTLS, header)
 	req := testRequest{Message: "test"}
-	resp := person{}
-	respHeader := myResponseHeader{}
-	if err := client.Call(url, req, &resp, &respHeader); err != nil {
+	resp, err := client.Call(url, req)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%+v", resp)
-	t.Logf("%+v", respHeader)
-	if resp.ID != 1 {
-		t.Errorf("want 1 got %d", resp.ID)
-	}
-	if respHeader.TransactionID != "100" {
-		t.Errorf("want 100 got %s", respHeader.TransactionID)
-	}
+	t.Logf("%+v", string(resp))
 }
 
 func TestClientSOAPFault(t *testing.T) {
@@ -186,8 +177,7 @@ func TestClientSOAPFault(t *testing.T) {
 	url := ts.URL + "/error"
 	client := NewClient(url, isTLS, nil)
 	req := testRequest{Message: "test"}
-	resp := person{}
-	err := client.Call(url, req, &resp, nil)
+	_, err := client.Call(url, req)
 	if err == nil {
 		t.Fatal("no error")
 	}

@@ -9,8 +9,6 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 // Envelope envelope
@@ -140,7 +138,7 @@ Loop:
 }
 
 // Call SOAP client API call
-func (s *Client) Call(soapAction string, request, response, header interface{}) error {
+func (s *Client) Call(soapAction string, request interface{}) (response []byte, err error) {
 	var envelope Envelope
 	if s.header != nil {
 		envelope = Envelope{
@@ -158,22 +156,28 @@ func (s *Client) Call(soapAction string, request, response, header interface{}) 
 			},
 		}
 	}
+
 	buffer := new(bytes.Buffer)
+	buffer.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	encoder := xml.NewEncoder(buffer)
 	encoder.Indent("  ", "    ")
-	if err := encoder.Encode(envelope); err != nil {
-		return errors.Wrap(err, "failed to encode envelope")
+	if err = encoder.Encode(envelope); err != nil {
+		err = fmt.Errorf("failed to encode envelope: %s", err.Error())
+		return
 	}
-	if err := encoder.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush encoder")
+	if err = encoder.Flush(); err != nil {
+		err = fmt.Errorf("failed to flush encoder: %s", err.Error())
+		return
 	}
 
 	req, err := http.NewRequest("POST", s.url, buffer)
 	if err != nil {
-		return errors.Wrap(err, "failed to create POST request")
+		err = fmt.Errorf("failed to create POST request: %s", err.Error())
+		return
 	}
 	req.Header.Add("Content-Type", "text/xml; charset=\"utf-8\"")
 	req.Header.Set("SOAPAction", soapAction)
+	req.Header.Set("Content-Length", string(buffer.Len()))
 	req.Header.Set("User-Agent", s.userAgent)
 	req.Close = true
 
@@ -187,33 +191,27 @@ func (s *Client) Call(soapAction string, request, response, header interface{}) 
 	client := &http.Client{Transport: tr}
 	res, err := client.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "failed to send SOAP request")
+		err = fmt.Errorf("failed to send SOAP request: %s", err.Error())
+		return
 	}
 	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusOK {
-		soapFault, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			return errors.Wrap(err, "failed to read SOAP fault response body")
+		soapFault, errr := ioutil.ReadAll(res.Body)
+		if errr != nil {
+			err = fmt.Errorf("failed to read SOAP fault response body: %s", errr.Error())
 		}
-		msg := fmt.Sprintf("HTTP Status Code: %d, SOAP Fault: \n%s", res.StatusCode, string(soapFault))
-		return errors.New(msg)
+		err = fmt.Errorf("HTTP Status Code: %d, SOAP Fault: \n%s", res.StatusCode, string(soapFault))
+		return
 	}
 
-	rawbody, err := ioutil.ReadAll(res.Body)
+	response, err = ioutil.ReadAll(res.Body)
 	if err != nil {
-		return errors.Wrap(err, "failed to read SOAP body")
+		err = fmt.Errorf("failed to read SOAP body: %s", err.Error())
+		return
 	}
-	if len(rawbody) == 0 {
-		return nil
+	if len(response) == 0 {
+		return
 	}
-	respEnvelope := Envelope{}
-	respEnvelope.Body = Body{Content: response}
-	if header != nil {
-		respEnvelope.Header = &Header{Content: header}
-	}
-
-	if err = xml.Unmarshal(rawbody, &respEnvelope); err != nil {
-		return errors.Wrap(err, "failed to unmarshal response SOAP Envelope")
-	}
-	return nil
+	return
 }

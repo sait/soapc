@@ -1,2 +1,0 @@
-gom 'github.com/pkg/errors'
-gom 'github.com/achiku/testsvr'
