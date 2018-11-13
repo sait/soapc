@@ -156,12 +156,16 @@ func (s *Client) Call(soapAction string, request interface{}) (response []byte, 
 			},
 		}
 	}
+	response, err = s.CallRaw(soapAction, envelope, nil)
+	return
+}
 
+func (s *Client) CallRaw(soapAction string, request interface{}, httpHeaders map[string]string) (response []byte, err error) {
 	buffer := new(bytes.Buffer)
 	buffer.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	encoder := xml.NewEncoder(buffer)
-	encoder.Indent("  ", "    ")
-	if err = encoder.Encode(envelope); err != nil {
+	// encoder.Indent("  ", "    ")
+	if err = encoder.Encode(request); err != nil {
 		err = fmt.Errorf("failed to encode envelope: %s", err.Error())
 		return
 	}
@@ -169,7 +173,6 @@ func (s *Client) Call(soapAction string, request interface{}) (response []byte, 
 		err = fmt.Errorf("failed to flush encoder: %s", err.Error())
 		return
 	}
-
 	req, err := http.NewRequest("POST", s.url, buffer)
 	if err != nil {
 		err = fmt.Errorf("failed to create POST request: %s", err.Error())
@@ -179,6 +182,9 @@ func (s *Client) Call(soapAction string, request interface{}) (response []byte, 
 	req.Header.Set("SOAPAction", soapAction)
 	req.Header.Set("Content-Length", string(buffer.Len()))
 	req.Header.Set("User-Agent", s.userAgent)
+	for key, value := range httpHeaders {
+		req.Header.Set(key, value)
+	}
 	req.Close = true
 
 	tr := &http.Transport{
@@ -200,6 +206,7 @@ func (s *Client) Call(soapAction string, request interface{}) (response []byte, 
 		soapFault, errr := ioutil.ReadAll(res.Body)
 		if errr != nil {
 			err = fmt.Errorf("failed to read SOAP fault response body: %s", errr.Error())
+			return
 		}
 		err = fmt.Errorf("HTTP Status Code: %d, SOAP Fault: \n%s", res.StatusCode, string(soapFault))
 		return
